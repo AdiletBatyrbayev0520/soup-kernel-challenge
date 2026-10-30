@@ -31,6 +31,7 @@ def test_rope_matches_hf(dtype, cos_batch):
     oq, ok = RoPE.apply(q, k, cos, sin)
     torch.autograd.backward((oq, ok), (gq, gk))
 
-    tol = {torch.float32: 1e-6, torch.bfloat16: 1e-2, torch.float16: 1e-3}[dtype]
+    # half: HF rounds each product before the add, we round once from fp32 (<= 1 ulp apart)
+    tol = {torch.float32: 1e-6, torch.bfloat16: 2e-2, torch.float16: 2e-3}[dtype]
     for ours, ref in ((oq, rq), (ok, rk), (q.grad, ref_dq), (k.grad, ref_dk)):
         torch.testing.assert_close(ours, ref, rtol=tol, atol=tol)

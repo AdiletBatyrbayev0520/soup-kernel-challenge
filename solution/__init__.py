@@ -13,6 +13,7 @@ The rules in short (the README and the task statement have the full ones):
   settings and outputs; no other GPU, no background processes, no tricks with the measurement.
 """
 
+from .causal_sdpa import patch_causal_sdpa
 from .fused_ce import patch_fused_ce
 from .mlp import patch_mlp_compute_dtype
 from .nf4 import patch_nf4_dequant
@@ -22,6 +23,7 @@ from .swiglu import patch_qwen2_mlp
 
 
 def apply():
+    patch_causal_sdpa()
     patch_fused_ce()
     patch_nf4_dequant()
     patch_rmsnorm()

@@ -47,3 +47,32 @@ def test_fused_ce_matches_pytorch(dtype, shape):
     rows, counts = row_losses_from_token_losses(step.token_loss, labels)
     assert counts == ref_rows[1]
     torch.testing.assert_close(torch.tensor(rows), torch.tensor(ref_rows[0]), rtol=1e-5, atol=1e-5)
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_chunked_head_matches_full_logits(dtype, monkeypatch):
+    from solution import machines
+    from solution.fused_ce import fused_causal_lm_loss
+
+    monkeypatch.setitem(machines.profile(), "ce_chunk_rows", 48)  # several chunks, a ragged last
+    torch.manual_seed(0)
+    b, t, h, v = 2, 70, 64, 1001
+    head = torch.nn.Linear(h, v, bias=False).cuda().requires_grad_(False)
+    hidden = torch.randn(b, t, h, device="cuda", requires_grad=True)
+    labels = torch.randint(0, v, (b, t), device="cuda")
+    labels[:, :20] = -100
+
+    with torch.autocast("cuda", dtype=dtype):
+        ref, ref_step = fused_causal_lm_loss(head(hidden), labels, 77)
+    ref.backward()
+    ref_grad, hidden.grad = hidden.grad.clone(), None
+    with torch.autocast("cuda", dtype=dtype):
+        loss, step = fused_causal_lm_loss(None, labels, 77, hidden, head)
+    loss.backward()
+
+    torch.testing.assert_close(loss, ref, rtol=1e-5, atol=1e-5)
+    torch.testing.assert_close(step.token_loss, ref_step.token_loss, rtol=1e-5, atol=1e-5)
+    torch.testing.assert_close(step.token_entropy, ref_step.token_entropy, rtol=1e-5, atol=1e-5)
+    assert int(step.correct) == int(ref_step.correct)
+    tol = 2e-2 if dtype == torch.bfloat16 else 2e-3
+    torch.testing.assert_close(hidden.grad, ref_grad, rtol=tol, atol=tol)

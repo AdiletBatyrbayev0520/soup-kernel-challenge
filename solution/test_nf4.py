@@ -7,7 +7,7 @@ pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="needs a C
 
 
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
-@pytest.mark.parametrize("shape", [(8960, 1536), (256, 1536), (300, 64)])
+@pytest.mark.parametrize("shape", [(8960, 1536), (256, 1536), (300, 64), (3, 1536)])
 def test_nf4_dequant_matches_bnb(dtype, shape):
     import bitsandbytes.functional as F
 

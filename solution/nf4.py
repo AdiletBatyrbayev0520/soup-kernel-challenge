@@ -18,18 +18,22 @@ NESTED_BLOCK = 256  # bnb's nested (absmax) blocksize: the only one it supports
 
 
 @triton.jit
-def nf4_dequant_kernel(packed_ptr, absmax8_ptr, absmax_code_ptr, absmax_scale_ptr, offset,
-                       nf4_ptr, out_ptr, n, BLOCKSIZE: tl.constexpr, NESTED: tl.constexpr,
+def nf4_dequant_kernel(packed_ptr, absmax8_ptr, absmax_code_ptr, absmax_scale_ptr, offset_ptr,
+                       nf4_ptr, out_ptr, n_bytes, BLOCKSIZE: tl.constexpr, NESTED: tl.constexpr,
                        BLOCK: tl.constexpr):
+    """BLOCK packed bytes -> 2 * BLOCK weights; a byte holds two codes, the high nibble first."""
     idx = tl.program_id(0).to(tl.int64) * BLOCK + tl.arange(0, BLOCK)
-    inside = idx < n
-    byte = tl.load(packed_ptr + idx // 2, mask=inside, other=0).to(tl.int32)
-    code = tl.where(idx % 2 == 0, byte >> 4, byte & 15)  # high nibble first, as bnb packs
-    block = idx // BLOCKSIZE
+    inside = idx < n_bytes
+    byte = tl.load(packed_ptr + idx, mask=inside, other=0).to(tl.int32)
+    block = idx // (BLOCKSIZE // 2)  # both codes of a byte share one absmax block
     absmax = tl.load(absmax_code_ptr + tl.load(absmax8_ptr + block, mask=inside, other=0).to(tl.int32))
-    absmax = absmax * tl.load(absmax_scale_ptr + block // NESTED, mask=inside, other=0.0) + offset
-    w = tl.load(nf4_ptr + code) * absmax
-    tl.store(out_ptr + idx, w.to(out_ptr.dtype.element_ty), mask=inside)
+    absmax = absmax * tl.load(absmax_scale_ptr + block // NESTED, mask=inside, other=0.0) \
+        + tl.load(offset_ptr)
+    hi = tl.load(nf4_ptr + (byte >> 4)) * absmax
+    lo = tl.load(nf4_ptr + (byte & 15)) * absmax
+    w = tl.reshape(tl.join(hi, lo), (2 * BLOCK,))
+    out_idx = tl.program_id(0).to(tl.int64) * (2 * BLOCK) + tl.arange(0, 2 * BLOCK)
+    tl.store(out_ptr + out_idx, w.to(out_ptr.dtype.element_ty), mask=out_idx < 2 * n_bytes)
 
 
 _NF4 = {}
@@ -42,16 +46,18 @@ def dequant_nf4(packed, absmax8, absmax_code, absmax_scale, offset, blocksize, s
         from bitsandbytes.functional import get_4bit_type
         _NF4[device] = get_4bit_type("nf4", device=device).float().contiguous()
     out = torch.empty(shape, dtype=dtype, device=device)
-    n = out.numel()
+    n_bytes = out.numel() // 2  # bnb shapes here are even (blocksize 64 divides the weight)
     block = profile()["dequant_block"]
-    nf4_dequant_kernel[(triton.cdiv(n, block),)](
-        packed.contiguous(), absmax8, absmax_code, absmax_scale, float(offset), _NF4[device], out, n,
-        BLOCKSIZE=blocksize, NESTED=NESTED_BLOCK, BLOCK=block, num_warps=4)
+    offset = torch.as_tensor(offset, dtype=torch.float32, device=device)  # no host sync
+    nf4_dequant_kernel[(triton.cdiv(n_bytes, block),)](
+        packed, absmax8, absmax_code, absmax_scale, offset, _NF4[device], out, n_bytes,
+        BLOCKSIZE=blocksize, NESTED=NESTED_BLOCK, BLOCK=block, num_warps=4,
+        enable_fp_fusion=False)  # bnb rounds absmax * scale and + offset separately: bit-exact
     return out
 
 
 def _ours(packed, quant_type, absmax8, nested_block):
-    return packed.is_cuda and quant_type == "nf4" and absmax8 is not None and \
+    return packed.is_cuda and packed.is_contiguous() and quant_type == "nf4" and absmax8 is not None and \
         absmax8.dtype == torch.uint8 and nested_block == NESTED_BLOCK
 
 

@@ -8,14 +8,15 @@ import os
 
 import torch
 
+# recompute_layers: decoder layers recomputed in backward (0 = off, 28 = all).
 # ce_block: vocab columns per program step in the cross-entropy kernels; *_warps: num_warps.
 # 5090: measured (CE stats 1538 GB/s, grad 1406 GB/s on bf16 [2048, 151936]); the rest are
 # extrapolated from it by memory bandwidth and SM size: re-sweep on those cards.
 PROFILES = {
-    "t4": dict(arch="sm_75 Turing", ce_block=2048, ce_warps=8, row_warps=4, dequant_block=1024),
-    "3090": dict(arch="sm_86 Ampere", ce_block=4096, ce_warps=8, row_warps=4, dequant_block=1024),
-    "4090": dict(arch="sm_89 Ada", ce_block=4096, ce_warps=8, row_warps=4, dequant_block=1024),
-    "5090": dict(arch="sm_120 Blackwell", ce_block=4096, ce_warps=4, row_warps=2, dequant_block=2048),
+    "t4": dict(arch="sm_75 Turing", ce_block=2048, ce_warps=8, row_warps=4, dequant_block=1024, recompute_layers=28),
+    "3090": dict(arch="sm_86 Ampere", ce_block=4096, ce_warps=8, row_warps=4, dequant_block=1024, recompute_layers=28),
+    "4090": dict(arch="sm_89 Ada", ce_block=4096, ce_warps=8, row_warps=4, dequant_block=1024, recompute_layers=28),
+    "5090": dict(arch="sm_120 Blackwell", ce_block=4096, ce_warps=4, row_warps=2, dequant_block=2048, recompute_layers=28),
 }
 BY_CAPABILITY = {(7, 5): "t4", (8, 6): "3090", (8, 9): "4090", (12, 0): "5090"}
 
@@ -39,6 +40,13 @@ MACHINE = None
 
 
 def profile():
+    """The machine's entry; SOUP_<KEY>=<int> overrides one value (local sweeps, e.g.
+    SOUP_RECOMPUTE_LAYERS=14). The jury sets none, so it gets the entry as written."""
     global MACHINE
-    MACHINE = MACHINE or detect()
+    if MACHINE is None:
+        MACHINE = detect()
+        for key, value in PROFILES[MACHINE].items():
+            env = os.environ.get(f"SOUP_{key.upper()}")
+            if env is not None and isinstance(value, int):
+                PROFILES[MACHINE][key] = int(env)
     return PROFILES[MACHINE]

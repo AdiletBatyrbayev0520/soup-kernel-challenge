@@ -16,11 +16,13 @@ The rules in short (the README and the task statement have the full ones):
 from .fused_ce import patch_fused_ce
 from .mlp import patch_mlp_compute_dtype
 from .nf4 import patch_nf4_dequant
+from .rmsnorm import patch_rmsnorm
 from .swiglu import patch_qwen2_mlp
 
 
 def apply():
     patch_fused_ce()
     patch_nf4_dequant()
+    patch_rmsnorm()
     patch_qwen2_mlp()  # the example: works out of the box, does not count as your own kernel
     patch_mlp_compute_dtype()  # after the example: it wraps Qwen2MLP.forward

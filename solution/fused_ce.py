@@ -223,7 +223,8 @@ def patch_fused_ce():
                              inputs_embeds=inputs_embeds, use_cache=use_cache, **kwargs)
         head, hidden = self.lm_head, outputs.last_hidden_state
         n_items = kwargs.get("num_items_in_batch")
-        if type(head) is torch.nn.Linear and head.bias is None and not head.weight.requires_grad:
+        if (profile()["ce_chunk_rows"] > 0 and type(head) is torch.nn.Linear and head.bias is None
+                and not head.weight.requires_grad):
             loss, STATE.step = fused_causal_lm_loss(None, labels, n_items, hidden, head)
         else:
             loss, STATE.step = fused_causal_lm_loss(head(hidden), labels, n_items)

@@ -1,0 +1,14 @@
+process,calls_per_step,impl,ms_per_call,ms_per_step,peak_mib_per_call,saved_mib_per_call,saved_mib_per_step,note
+rmsnorm,57,base (HF Qwen2RMSNorm),1.6752,95.48,84.0,12.0,684.4,
+rmsnorm,57,ours (Triton RMSNorm),0.5867,33.44,36.0,12.0,684.4,
+rope,28,base (HF apply_rotary_pos_emb),1.8846,52.77,64.2,2.0,56.0,
+rope,28,ours (Triton RoPE),0.6483,18.15,42.2,2.0,56.0,
+mlp (gate/up/down + act),28,"base (HF, fp32 activations)",19.6022,548.86,444.0,210.0,5880.0,
+mlp (gate/up/down + act),28,example SwiGLU (fp32 activations),18.4734,517.25,374.0,140.0,3920.0,
+mlp (gate/up/down + act),28,ours (compute dtype + SwiGLU),15.8791,444.61,187.0,70.0,1960.0,
+"attention projections (q/k/v/o + LoRA q,v)",28,base = ours (bnb dequant),4.9305,138.05,83.1,18.3,511.7,
+attention core (SDPA),28,base = ours,2.4371,68.24,56.2,26.1,730.6,
+nf4 dequant (7 weights),56,"base (bitsandbytes, 2 kernels)",0.9818,54.98,,0.0,0.0,transient W buffers only
+nf4 dequant (7 weights),56,"ours (Triton, 1 kernel)",0.7526,42.14,,0.0,0.0,transient W buffers only
+lm_head + cross-entropy + metrics,1,base (HF loss + TRL + Soup rewind),209.9447,209.94,4600.7,1632.1,1632.1,
+lm_head + cross-entropy + metrics,1,ours (fused CE + stats),83.9785,83.98,1052.8,1038.6,1038.6,

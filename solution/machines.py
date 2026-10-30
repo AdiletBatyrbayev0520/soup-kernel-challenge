@@ -12,10 +12,10 @@ import torch
 # 5090: measured (CE stats 1538 GB/s, grad 1406 GB/s on bf16 [2048, 151936]); the rest are
 # extrapolated from it by memory bandwidth and SM size: re-sweep on those cards.
 PROFILES = {
-    "t4": dict(arch="sm_75 Turing", ce_block=2048, ce_warps=8, row_warps=4),
-    "3090": dict(arch="sm_86 Ampere", ce_block=4096, ce_warps=8, row_warps=4),
-    "4090": dict(arch="sm_89 Ada", ce_block=4096, ce_warps=8, row_warps=4),
-    "5090": dict(arch="sm_120 Blackwell", ce_block=4096, ce_warps=4, row_warps=2),
+    "t4": dict(arch="sm_75 Turing", ce_block=2048, ce_warps=8, row_warps=4, dequant_block=1024),
+    "3090": dict(arch="sm_86 Ampere", ce_block=4096, ce_warps=8, row_warps=4, dequant_block=1024),
+    "4090": dict(arch="sm_89 Ada", ce_block=4096, ce_warps=8, row_warps=4, dequant_block=1024),
+    "5090": dict(arch="sm_120 Blackwell", ce_block=4096, ce_warps=4, row_warps=2, dequant_block=2048),
 }
 BY_CAPABILITY = {(7, 5): "t4", (8, 6): "3090", (8, 9): "4090", (12, 0): "5090"}
 

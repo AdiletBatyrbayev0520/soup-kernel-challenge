@@ -10,10 +10,10 @@ import torch
 
 # ce_block: vocab columns per program step in the cross-entropy kernels; *_warps: num_warps.
 PROFILES = {
-    "t4": dict(arch="sm_75 Turing", ce_block=4096, ce_warps=8, row_warps=4),
-    "3090": dict(arch="sm_86 Ampere", ce_block=4096, ce_warps=8, row_warps=4),
-    "4090": dict(arch="sm_89 Ada", ce_block=8192, ce_warps=16, row_warps=4),
-    "5090": dict(arch="sm_120 Blackwell", ce_block=8192, ce_warps=16, row_warps=4),
+    "t4": dict(arch="sm_75 Turing", ce_block=4096, ce_warps=8, row_warps=4, dequant_block=1024),
+    "3090": dict(arch="sm_86 Ampere", ce_block=4096, ce_warps=8, row_warps=4, dequant_block=1024),
+    "4090": dict(arch="sm_89 Ada", ce_block=8192, ce_warps=16, row_warps=4, dequant_block=1024),
+    "5090": dict(arch="sm_120 Blackwell", ce_block=8192, ce_warps=16, row_warps=4, dequant_block=1024),
 }
 BY_CAPABILITY = {(7, 5): "t4", (8, 6): "3090", (8, 9): "4090", (12, 0): "5090"}
 

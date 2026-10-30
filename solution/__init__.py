@@ -17,6 +17,7 @@ from .causal_sdpa import patch_causal_sdpa
 from .fused_ce import patch_fused_ce
 from .mlp import patch_mlp_compute_dtype
 from .nf4 import patch_nf4_dequant
+from .recompute import patch_layer_recompute
 from .rmsnorm import patch_rmsnorm
 from .rope import patch_rope
 from .swiglu import patch_qwen2_mlp
@@ -28,5 +29,6 @@ def apply():
     patch_nf4_dequant()
     patch_rmsnorm()
     patch_rope()
+    patch_layer_recompute()
     patch_qwen2_mlp()  # the example: works out of the box, does not count as your own kernel
     patch_mlp_compute_dtype()  # after the example: it wraps Qwen2MLP.forward

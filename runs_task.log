@@ -1,0 +1,13 @@
+[run_task] warm-up done in 66.66 s
+[run_task] base_1: training ...
+[run_task] base_1: ok, 14.53 s, peak 15787 MiB
+[run_task] solution_1: training ...
+[run_task] solution_1: ok, 14.43 s, peak 13827 MiB
+[run_task] eval base ...
+[run_task] eval solution ...
+
+=== result ===
+base      time     14.5 s   peak  15787 MiB   eval loss 2.05299
+solution  time     14.4 s   peak  13827 MiB   eval loss 2.05317
+speedup 1.007x   memory base/solution 1.142x   eval loss vs base 0.009 %
+written: /home/batyrbayev0520/Desktop/decentraton 6.0/soup-kernel-challenge/runs/result.json

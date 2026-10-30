@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Soup Kernel Challenge — runs</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+.viz-root {
+  color-scheme: light;
+  --surface-0: #f3f2ef; --surface-1: #fcfcfb; --border: #e2e1dc;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #77766f; --grid: #e7e6e1;
+  --series-1: #2a78d6; --series-2: #eb6834;
+  --good: #008300; --critical: #e34948;
+}
+@media (prefers-color-scheme: dark) {
+  .viz-root {
+    color-scheme: dark;
+    --surface-0: #111110; --surface-1: #1a1a19; --border: #2e2e2c;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #96958c; --grid: #2a2a28;
+    --series-1: #3987e5; --series-2: #d95926;
+    --good: #2fa62f; --critical: #e66767;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.4 system-ui, sans-serif; }
+.viz-root { background: var(--surface-0); color: var(--text-primary); min-height: 100vh; padding: 24px; }
+h1 { font-size: 20px; margin: 0 0 4px; }
+h2 { font-size: 15px; margin: 0 0 2px; }
+.sub { color: var(--text-secondary); margin: 0 0 12px; font-size: 13px; }
+.bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 16px 0; }
+button { font: inherit; padding: 8px 18px; border-radius: 6px; border: 0; cursor: pointer;
+  background: #1d5fae; color: #fff; font-weight: 600; }
+button:disabled { opacity: .5; cursor: progress; }
+button:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+#status { color: var(--text-secondary); }
+pre#log { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 10px;
+  font-size: 12px; max-height: 220px; overflow: auto; white-space: pre-wrap; display: none; margin: 0 0 16px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile, .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+.tile .k { color: var(--text-secondary); font-size: 12px; }
+.tile .v { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tile .d { color: var(--text-muted); font-size: 12px; }
+.multiples { display: grid; grid-template-columns: repeat(auto-fit, minmax(560px, 1fr)); gap: 16px; margin-bottom: 16px; }
+.legend { display: flex; gap: 14px; font-size: 12px; color: var(--text-secondary); margin: 4px 0 6px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+svg text { fill: var(--text-muted); font-size: 11px; }
+svg .lbl { fill: var(--text-secondary); }
+.tip { position: fixed; pointer-events: none; background: var(--surface-1); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; font-size: 12px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.15); display: none; z-index: 10; white-space: nowrap; }
+.empty { color: var(--text-muted); padding: 30px 0; text-align: center; }
+details { margin-top: 8px; }
+table { border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+th, td { padding: 4px 8px; border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
+th { color: var(--text-secondary); font-weight: 600; position: sticky; top: 0; background: var(--surface-1); }
+.tablewrap { overflow: auto; max-height: 420px; }
+.ok { color: var(--good); } .bad { color: var(--critical); }
+.card { margin-bottom: 16px; }
+.multiples .card { margin-bottom: 0; }
+.big { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.unit { font-size: 12px; color: var(--text-muted); font-weight: 400; }
+select, .filebtn { font: inherit; font-size: 13px; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--surface-1); color: var(--text-primary); cursor: pointer; }
+.filebtn:focus-within { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.filebtn input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+label.k { font-size: 12px; color: var(--text-secondary); display: flex; gap: 6px; align-items: center; }
+h2.section { font-size: 17px; margin: 28px 0 4px; }
+.spacer { flex: 1; }
+</style>
+</head>
+<body class="viz-root">
+<h1>Soup Kernel Challenge: runs</h1>
+<p class="sub">Each run: base vs solution plus one profiled solution run, then the rule checks. History is kept in <code>dashboard/runs.csv</code>; CSVs from other machines go to <code>dashboard/imported/</code>.</p>
+
+<div class="bar">
+  <button id="run">Run benchmark</button>
+  <span id="status" role="status" aria-live="polite"></span>
+  <span class="spacer"></span>
+  <label class="k">Data <select id="source"></select></label>
+  <label class="filebtn">Import CSV…<input type="file" id="file" accept=".csv,text/csv"></label>
+</div>
+<pre id="log" aria-label="run log"></pre>
+
+<div class="card"><h2>Training time (whole <code>soup train</code>) across runs</h2><p class="sub">seconds, lower is better · mean over repeats</p>
+  <div class="legend"><span><i style="background:var(--series-1)"></i>base</span><span><i style="background:var(--series-2)"></i>solution</span></div>
+  <div id="c-time"></div></div>
+<div class="card"><h2>Peak GPU memory (nvidia-smi) across runs</h2><p class="sub">MiB, lower is better · mean over repeats</p>
+  <div class="legend"><span><i style="background:var(--series-1)"></i>base</span><span><i style="background:var(--series-2)"></i>solution</span></div>
+  <div id="c-mem"></div></div>
+
+<h2 class="section">Each kernel group across runs</h2>
+<p class="sub">GPU ms per training step in each profiled run (solution side, torch.profiler)</p>
+<div class="multiples" id="multiples"></div>
+
+<h2 class="section">One run</h2>
+<div class="bar" style="margin:6px 0 12px"><label class="k">Run <select id="batch"></select></label></div>
+<div class="tiles" id="tiles"></div>
+<div class="card">
+  <h2>Where the GPU time of a training step goes</h2>
+  <p class="sub" id="prof-sub"></p>
+  <div id="c-cats"></div>
+</div>
+
+<div class="card">
+  <h2>All rows of this data source</h2>
+  <div class="tablewrap" id="table"></div>
+</div>
+<div class="tip" id="tip"></div>
+
+<script>
+const CATS = [
+  ["own_triton", "Your Triton kernels (solution/)"],
+  ["example_triton", "Example SwiGLU kernels (do not count)"],
+  ["matmul", "Matrix multiplies (fwd + grad)"],
+  ["nf4_dequant", "NF4 weight dequantization (reading weights)"],
+  ["attention", "Attention"],
+  ["softmax_ce", "Softmax / cross-entropy"],
+  ["optimizer", "Optimizer step (AdamW, applying gradients)"],
+  ["reduction", "Reductions / norms"],
+  ["cast_copy", "Copies, casts, indexing"],
+  ["elementwise", "Element-wise ops"],
+  ["other", "Other"],
+];
+const $ = id => document.getElementById(id);
+const tip = $("tip");
+const NS = "http://www.w3.org/2000/svg";
+const num = v => (v === "" || v == null || isNaN(Number(v))) ? null : Number(v);
+const fmt = (v, d = 1) => v == null || v === "" ? "—" : Number(v).toLocaleString(undefined, {maximumFractionDigits: d});
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+let rows = [];
+
+function parseCSV(text) {
+  // RFC 4180: quoted fields may hold commas, quotes ("") and newlines.
+  const out = []; let row = [], cur = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) { if (ch === '"' && text[i + 1] === '"') { cur += '"'; i++; } else if (ch === '"') q = false; else cur += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ",") { row.push(cur); cur = ""; }
+    else if (ch === "\n" || ch === "\r") { if (ch === "\r" && text[i + 1] === "\n") i++; row.push(cur); out.push(row); row = []; cur = ""; }
+    else cur += ch;
+  }
+  if (cur || row.length) { row.push(cur); out.push(row); }
+  const [head = [], ...lines] = out;
+  return lines.filter(l => l.length > 1).map(l => Object.fromEntries(head.map((h, i) => [h, l[i] ?? ""])));
+}
+
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  parent && parent.appendChild(e); return e;
+}
+function showTip(ev, html) {
+  tip.innerHTML = html; tip.style.display = "block";
+  tip.style.left = Math.min(ev.clientX + 14, innerWidth - tip.offsetWidth - 8) + "px"; tip.style.top = ev.clientY + 14 + "px";
+}
+function hover(node, html) {
+  node.addEventListener("mousemove", ev => showTip(ev, html));
+  node.addEventListener("mouseleave", () => tip.style.display = "none");
+}
+function niceMax(v) { if (!v) return 1; const p = 10 ** Math.floor(Math.log10(v)); return Math.ceil(v / p * 1.1) * p; }
+const shortId = b => /^\d{8}-\d{6}$/.test(b) ? `${b.slice(4, 6)}/${b.slice(6, 8)} ${b.slice(9, 11)}:${b.slice(11, 13)}` : b;
+
+// Line chart over runs: one y-axis from 0, 2px lines, 8px markers, crosshair + tooltip, end labels.
+function lineChart(target, labels, series, unit, digits, H = 320, W = 1100) {
+  target.innerHTML = "";
+  if (!labels.length) { target.innerHTML = '<div class="empty">No runs in this data source yet.</div>'; return; }
+  const m = {l: 64, r: 90, t: 14, b: 44};
+  const svg = el("svg", {viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img", "aria-label": `${unit} across runs`}, target);
+  const vals = series.flatMap(s => s.values).filter(v => v != null);
+  const max = niceMax(Math.max(0, ...vals)), iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const x = i => labels.length < 2 ? m.l + iw / 2 : m.l + i * iw / (labels.length - 1), y = v => m.t + ih - v / max * ih;
+  for (let i = 0; i <= 4; i++) {
+    const v = max * i / 4;
+    el("line", {x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), stroke: "var(--grid)"}, svg);
+    el("text", {x: m.l - 8, y: y(v) + 4, "text-anchor": "end", style: "font-size:13px"}, svg).textContent = fmt(v, max < 10 ? 1 : 0);
+  }
+  const every = Math.ceil(labels.length / 10);
+  labels.forEach((l, i) => { if (i % every === 0 || i === labels.length - 1)
+    el("text", {x: x(i), y: H - m.b + 22, "text-anchor": "middle", class: "lbl", style: "font-size:13px"}, svg).textContent = shortId(l); });
+  const cross = el("line", {y1: m.t, y2: m.t + ih, stroke: "var(--text-muted)", "stroke-dasharray": "3 3", visibility: "hidden"}, svg);
+  for (const s of series) {
+    const pts = s.values.map((v, i) => v == null ? null : [x(i), y(v)]);
+    // Break the line at gaps instead of bridging them.
+    let seg = [];
+    const flush = () => { if (seg.length > 1) el("polyline", {points: seg.join(" "), fill: "none", stroke: s.color, "stroke-width": 2, "stroke-linejoin": "round"}, svg); seg = []; };
+    pts.forEach(p => p ? seg.push(p.join(",")) : flush()); flush();
+    pts.forEach(p => p && el("circle", {cx: p[0], cy: p[1], r: 4, fill: s.color, stroke: "var(--surface-1)", "stroke-width": 2}, svg));
+    const li = s.values.findLastIndex(v => v != null);
+    if (li >= 0) el("text", {x: x(li) + 10, y: y(s.values[li]) + 4, class: "lbl", style: "font-size:13px"}, svg).textContent = fmt(s.values[li], digits);
+  }
+  const hit = el("rect", {x: m.l - 10, y: m.t, width: iw + 20, height: ih, fill: "transparent"}, svg);
+  hit.addEventListener("mousemove", ev => {
+    const r = svg.getBoundingClientRect(), sx = (ev.clientX - r.left) * W / r.width;
+    const i = labels.length < 2 ? 0 : Math.max(0, Math.min(labels.length - 1, Math.round((sx - m.l) / iw * (labels.length - 1))));
+    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
+    showTip(ev, `<b>${esc(labels[i])}</b>` + series.map(s => `<br><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${s.color}"></i> ${s.name}: ${fmt(s.values[i], digits)} ${unit}`).join(""));
+  });
+  hit.addEventListener("mouseleave", () => { tip.style.display = "none"; cross.setAttribute("visibility", "hidden"); });
+}
+
+function hbars(target, items) {
+  target.innerHTML = "";
+  if (!items.length) { target.innerHTML = '<div class="empty">This run has no profile.</div>'; return; }
+  const total = items.reduce((a, b) => a + b.v, 0);
+  const rowH = 26, m = {l: 300, r: 130}, W = 1000, H = items.length * rowH + 6;
+  const svg = el("svg", {viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img", "aria-label": "GPU time per kernel group"}, target);
+  const max = Math.max(...items.map(i => i.v)), iw = W - m.l - m.r;
+  items.forEach((it, i) => {
+    const yy = i * rowH + 4, w = Math.max(1, it.v / max * iw), r = Math.min(4, w / 2);
+    el("text", {x: m.l - 10, y: yy + 14, "text-anchor": "end", class: "lbl", style: "font-size:12px"}, svg).textContent = it.label;
+    el("path", {d: `M${m.l},${yy}H${m.l + w - r}Q${m.l + w},${yy} ${m.l + w},${yy + r}V${yy + 18 - r}Q${m.l + w},${yy + 18} ${m.l + w - r},${yy + 18}H${m.l}Z`,
+      fill: it.key.endsWith("_triton") ? "var(--series-2)" : "var(--series-1)"}, svg);
+    el("text", {x: m.l + w + 6, y: yy + 14, style: "font-size:12px"}, svg).textContent = `${fmt(it.v, 2)} ms · ${fmt(it.v / total * 100, 1)}%`;
+    hover(el("rect", {x: 0, y: yy - 2, width: W, height: rowH, fill: "transparent"}, svg),
+      `<b>${it.label}</b><br>${fmt(it.v, 3)} ms per step · ${fmt(it.v / total * 100, 1)}% of GPU time`);
+  });
+}
+
+function tile(k, v, d) { return `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${esc(d)}</div></div>`; }
+const mean = (b, side, key) => { const v = rows.filter(r => r.batch_id === b && r.side === side).map(r => num(r[key])).filter(x => x != null);
+  return v.length ? v.reduce((a, c) => a + c, 0) / v.length : null; };
+
+function render() {
+  const batches = [...new Set(rows.map(r => r.batch_id))];
+  const timed = batches.filter(b => mean(b, "base", "wall_s") != null || mean(b, "solution", "wall_s") != null);
+  const two = key => [{name: "base", color: "var(--series-1)", values: timed.map(b => mean(b, "base", key))},
+                      {name: "solution", color: "var(--series-2)", values: timed.map(b => mean(b, "solution", key))}];
+  lineChart($("c-time"), timed, two("wall_s"), "s", 2);
+  lineChart($("c-mem"), timed, two("gpu_peak_mib"), "MiB", 0);
+
+  const profs = rows.filter(r => r.side === "profile");
+  $("multiples").innerHTML = profs.length ? "" : '<div class="empty">No profiled run in this data source yet.</div>';
+  for (const [k, label] of CATS) {
+    const vals = profs.map(r => num(r[k + "_ms_per_step"]));
+    if (!vals.some(v => v)) continue;
+    const card = document.createElement("div"); card.className = "card"; $("multiples").appendChild(card);
+    const latest = vals.findLast(v => v != null);
+    card.innerHTML = `<h2>${label}</h2><div class="big">${fmt(latest, 2)} <span class="unit">ms/step, latest</span></div>`;
+    const chart = document.createElement("div"); card.appendChild(chart);
+    lineChart(chart, profs.map(r => r.batch_id), [{name: label, color: k.endsWith("_triton") ? "var(--series-2)" : "var(--series-1)", values: vals}], "ms/step", 2, 300, 620);
+  }
+
+  const sel = $("batch"), keep = sel.value;
+  sel.innerHTML = batches.slice().reverse().map(b => `<option value="${esc(b)}">${esc(b)}</option>`).join("");
+  if (batches.includes(keep)) sel.value = keep;
+  renderBatch();
+
+  const cols = ["batch_id", "run", "side", "exit_code", "wall_s", "train_loop_s", "median_step_s", "gpu_peak_mib", "torch_alloc_mib", "eval_loss", "speedup", "memory_ratio", "checks_passed", "gpu_ms_per_step", "gpu", "note"];
+  $("table").innerHTML = rows.length ? `<table><thead><tr>${cols.map(c => `<th>${c}</th>`).join("")}</tr></thead><tbody>${
+    rows.slice().reverse().map(r => `<tr>${cols.map(c => `<td>${esc(r[c])}</td>`).join("")}</tr>`).join("")}</tbody></table>` : '<div class="empty">Empty.</div>';
+}
+
+function renderBatch() {
+  const b = $("batch").value, lr = rows.filter(r => r.batch_id === b), any = lr[0] || {};
+  const passed = num(any.checks_passed), total = num(any.checks_total), q = num(any.quality_delta_pct);
+  $("tiles").innerHTML = !b ? "" :
+    tile("Speedup (base / solution time)", any.speedup ? fmt(any.speedup, 3) + "×" : "—", `${fmt(mean(b, "base", "wall_s"), 2)} → ${fmt(mean(b, "solution", "wall_s"), 2)} s`) +
+    tile("Memory (base / solution peak)", any.memory_ratio ? fmt(any.memory_ratio, 3) + "×" : "—", `${fmt(mean(b, "base", "gpu_peak_mib"), 0)} → ${fmt(mean(b, "solution", "gpu_peak_mib"), 0)} MiB`) +
+    tile("Eval loss vs base", q != null ? (q >= 0 ? "+" : "") + fmt(q, 3) + "%" : "—", `solution ${fmt(mean(b, "solution", "eval_loss"), 4)}`) +
+    tile("Rule checks", total ? `<span class="${passed === total ? "ok" : "bad"}">${passed === total ? "✓" : "✗"}</span> ${passed}/${total}` : "—", any.note || any.gpu || "");
+  const p = lr.find(r => r.side === "profile");
+  $("prof-sub").textContent = p ? `torch.profiler over ${p.profile_steps} steps · ${fmt(p.gpu_ms_per_step, 1)} GPU ms per step in total · ${fmt(p.backward_named_ms_per_step, 2)} ms/step in kernels named backward/grad (matmul kernels carry no such name)` : "";
+  hbars($("c-cats"), p ? CATS.map(([k, label]) => ({key: k, label, v: num(p[k + "_ms_per_step"]) || 0})).filter(i => i.v > 0).sort((a, c) => c.v - a.v) : []);
+}
+
+async function loadSources(pick) {
+  const names = await (await fetch("/api/sources")).json();
+  const sel = $("source"), keep = pick || sel.value;
+  sel.innerHTML = `<option value="">This machine (runs.csv)</option>` + names.map(n => `<option value="${esc(n)}">Imported: ${esc(n)}</option>`).join("");
+  sel.value = names.includes(keep) ? keep : "";
+}
+async function refresh() {
+  const src = $("source").value;
+  const r = await fetch(src ? "/imported/" + encodeURIComponent(src) : "/runs.csv");
+  rows = r.ok ? parseCSV(await r.text()) : [];
+  render();
+}
+
+$("source").onchange = refresh;
+$("batch").onchange = renderBatch;
+$("file").onchange = async ev => {
+  const f = ev.target.files[0]; ev.target.value = "";
+  if (!f) return;
+  const r = await fetch("/api/import?name=" + encodeURIComponent(f.name), {method: "POST", body: await f.text()});
+  const j = await r.json();
+  if (!r.ok) { $("status").textContent = `Import failed: ${j.error}`; return; }
+  $("status").textContent = `Imported ${j.name}: ${j.rows} rows.`;
+  await loadSources(j.name); refresh();
+};
+
+let polling = null;
+async function poll() {
+  const s = await (await fetch("/api/status")).json();
+  $("run").disabled = s.running;
+  if (s.running || s.batch) $("status").textContent = s.running ? `Running ${s.batch}… (about 2–10 min)` : `Last run ${s.batch} finished.`;
+  $("log").style.display = s.log ? "block" : "none";
+  $("log").textContent = s.log; $("log").scrollTop = 1e9;
+  if (!s.running && polling) { clearInterval(polling); polling = null; $("source").value = ""; refresh(); }
+  if (s.running && !polling) polling = setInterval(poll, 3000);
+}
+$("run").onclick = async () => {
+  const r = await fetch("/api/run", {method: "POST"});
+  if (!r.ok) $("status").textContent = (await r.json()).error;
+  poll();
+};
+loadSources(new URLSearchParams(location.search).get("source")).then(refresh); poll();
+</script>
+</body>
+</html>

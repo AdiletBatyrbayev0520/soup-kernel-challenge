@@ -1,0 +1,5 @@
+batch_id,run,python,backend,lora_targets,gradient_checkpointing,exit_code,wall_s,train_loop_s,median_step_s,gpu_peak_mib,torch_alloc_mib,torch_reserved_mib,first_loss,mean_loss,eval_loss,speedup_vs_base,memory_ratio_vs_base,eval_delta_pct_vs_base,note
+20261031-012429,base,.venv,transformers,"q_proj,v_proj",False,0,14.63,8.86,0.1153,15765,13339.5,14164.0,2.057255744934082,2.060957089997828,2.05317,1.0,1.0,0.0,
+20261031-012429,ours_unsloth_branch,.venv,transformers + solution/,"q_proj,v_proj",False,0,13.43,7.6,0.0886,8272,6502.0,6660.0,2.053318500518799,2.060244836844504,2.05311,1.0894,1.9058,-0.003,
+20261031-012429,unsloth,.venv-unsloth,unsloth,"down_proj,gate_proj,k_proj,o_proj,q_proj,up_proj,v_proj",False,0,17.69,6.82,0.075,8090,6380.6,6600.0,3.0112006664276123,1.9216143321245909,1.9249,0.827,1.9487,-6.247,
+20261031-012429,unsloth_gc,.venv-unsloth,unsloth,"down_proj,gate_proj,k_proj,o_proj,q_proj,up_proj,v_proj",unsloth (offloaded),0,20.39,8.93,0.1065,3819,2099.4,2268.0,3.0112006664276123,1.9212944488972425,1.92499,0.7175,4.128,-6.243,

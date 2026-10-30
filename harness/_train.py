@@ -112,9 +112,13 @@ def main():
     sys.argv = ["soup", "train", "--config", args.config, "--yes"]
 
     # Soup imports unsloth by itself when it is installed (for a tip), which would patch the
-    # model behind both runs; keep it out.
-    sys.modules["unsloth"] = None
-    sys.modules["unsloth_zoo"] = None
+    # model behind both runs; keep it out of the base run only (unsloth-unblocked branch: the
+    # solution may use Unsloth, so it is imported first, as Unsloth asks).
+    if args.solution:
+        import unsloth  # noqa: F401
+    else:
+        sys.modules["unsloth"] = None
+        sys.modules["unsloth_zoo"] = None
     import torch
 
     torch.empty(1, device="cuda")

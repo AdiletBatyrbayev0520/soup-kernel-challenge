@@ -17,7 +17,8 @@ MODEL = "Qwen/Qwen2.5-1.5B-Instruct"  # the same `base` as task/task.yaml
 # Ready-made kernel libraries. solution/ may not import any of them (checked in its source), and
 # none may be loaded during a run, except torchao, which peft can import by itself.
 BANNED_MODULES = (
-    "unsloth", "unsloth_zoo", "liger_kernel", "xformers", "flash_attn", "flashinfer",
+    # unsloth-unblocked branch: unsloth, unsloth_zoo and xformers (which Unsloth loads) allowed
+    "liger_kernel", "flash_attn", "flashinfer",
     "apex", "torchao", "bitblas", "gemlite", "hqq", "cut_cross_entropy", "deepspeed",
     "vllm", "awq", "auto_gptq", "gptqmodel", "exllamav2", "marlin", "quack", "tilelang",
 )

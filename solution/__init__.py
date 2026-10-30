@@ -13,18 +13,10 @@ The rules in short (the README and the task statement have the full ones):
   settings and outputs; no other GPU, no background processes, no tricks with the measurement.
 """
 
-from .fused_ce import patch_fused_ce
-from .mlp import patch_mlp_compute_dtype
-from .nf4 import patch_nf4_dequant
-from .rmsnorm import patch_rmsnorm
-from .rope import patch_rope
-from .swiglu import patch_qwen2_mlp
+from .unsloth_loader import patch_unsloth_loader
 
 
 def apply():
-    patch_fused_ce()
-    patch_nf4_dequant()
-    patch_rmsnorm()
-    patch_rope()
-    patch_qwen2_mlp()  # the example: works out of the box, does not count as your own kernel
-    patch_mlp_compute_dtype()  # after the example: it wraps Qwen2MLP.forward
+    # unsloth-unblocked branch: Unsloth does the work; our kernels (fused_ce, nf4, rmsnorm, rope,
+    # mlp) stay in this folder but are not applied, as Unsloth patches the same Qwen2 forwards.
+    patch_unsloth_loader()

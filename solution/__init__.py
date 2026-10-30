@@ -13,8 +13,10 @@ The rules in short (the README and the task statement have the full ones):
   settings and outputs; no other GPU, no background processes, no tricks with the measurement.
 """
 
+from .mlp import patch_mlp_compute_dtype
 from .swiglu import patch_qwen2_mlp
 
 
 def apply():
     patch_qwen2_mlp()  # the example: works out of the box, does not count as your own kernel
+    patch_mlp_compute_dtype()  # after the example: it wraps Qwen2MLP.forward

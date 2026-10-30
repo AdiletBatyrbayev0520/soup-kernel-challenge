@@ -85,7 +85,7 @@ def _ours(q, k, cos, sin, unsqueeze_dim):
             and q.stride(-1) == 1 and k.stride(-1) == 1 and cos.stride(-1) == 1
             and sin.stride() == cos.stride() and cos.shape[-2] == q.shape[2]
             and q.shape[0] == k.shape[0] and q.shape[2] == k.shape[2]
-            and q.dtype == k.dtype and cos.dtype == sin.dtype
+            and q.dtype == k.dtype == cos.dtype == sin.dtype  # HF would promote mixed dtypes
             and cos.shape[0] in (1, q.shape[0]))
 
 
@@ -97,8 +97,6 @@ def patch_rope():
 
     def apply_rotary_pos_emb(q, k, cos, sin, unsqueeze_dim=1):
         if not _ours(q, k, cos, sin, unsqueeze_dim):
-            return original(q, k, cos, sin, unsqueeze_dim)
-        if cos.dtype != q.dtype:  # HF promotes; keep it simple and exact
             return original(q, k, cos, sin, unsqueeze_dim)
         return RoPE.apply(q, k, cos, sin)
 

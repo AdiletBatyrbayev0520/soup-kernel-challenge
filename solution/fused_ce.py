@@ -73,15 +73,30 @@ def ce_grad_kernel(logits_ptr, stride, target_ptr, lse_ptr, coef_ptr, V, BLOCK: 
         tl.store(base + cols, (p * coef).to(logits_ptr.dtype.element_ty), mask=inside)
 
 
-def ce_stats(logits2d, target):
-    """Per row of [N, V] logits: lse, loss (0 without a label), entropy, argmax == target."""
+def stat_buffers(n, device):
+    """lse, loss, entropy (fp32) and correct (int32), one value per row."""
+    return [torch.empty(n, device=device, dtype=torch.float32) for _ in range(3)] + \
+        [torch.empty(n, device=device, dtype=torch.int32)]
+
+
+def ce_stats(logits2d, target, out=None):
+    """Per row of [N, V] logits: lse, loss (0 without a label), entropy, argmax == target.
+    Written into `out` (four [N] buffers, or row slices of them) when given."""
     n, v = logits2d.shape
-    out = [torch.empty(n, device=logits2d.device, dtype=torch.float32) for _ in range(3)]
-    correct = torch.empty(n, device=logits2d.device, dtype=torch.int32)
+    out = out or stat_buffers(n, logits2d.device)
     p = profile()
-    ce_stats_kernel[(n,)](logits2d, logits2d.stride(0), target, *out, correct, v,
+    ce_stats_kernel[(n,)](logits2d, logits2d.stride(0), target, *out, v,
                           BLOCK=p["ce_block"], num_warps=p["ce_warps"])
-    return (*out, correct)
+    return tuple(out)
+
+
+def ce_grad(logits2d, target, lse, coef):
+    """In place: logits2d <- d(loss_sum * coef) / d(logits2d)."""
+    p = profile()
+    ce_grad_kernel[(logits2d.shape[0],)](logits2d, logits2d.stride(0), target, lse, coef,
+                                         logits2d.shape[1], BLOCK=p["ce_block"],
+                                         num_warps=p["ce_warps"])
+    return logits2d
 
 
 class FusedCrossEntropy(torch.autograd.Function):
@@ -99,16 +114,60 @@ class FusedCrossEntropy(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad, *_):
         logits2d, target, lse, denom = ctx.saved_tensors
-        coef = (grad.float() / denom).reshape(1)
-        p = profile()
-        ce_grad_kernel[(logits2d.shape[0],)](logits2d, logits2d.stride(0), target, lse, coef,
-                                             logits2d.shape[1], BLOCK=p["ce_block"],
-                                             num_warps=p["ce_warps"])
+        ce_grad(logits2d, target, lse, (grad.float() / denom).reshape(1))
         return logits2d.view(ctx.shape), None, None
 
 
-def fused_causal_lm_loss(logits, labels, num_items_in_batch=None):
-    """Loss as ForCausalLMLoss, plus Soup's ChunkedStep for TRL's metrics and the rewind log."""
+class ChunkedHeadCrossEntropy(torch.autograd.Function):
+    """lm_head + FusedCrossEntropy over row chunks: the [N, V] logits never exist at once.
+
+    weight is a compute-dtype copy of the frozen (tied) head, so each chunk's logits are the
+    ones autocast's lm_head would make; backward recomputes a chunk's logits, turns them into
+    their gradient in place and multiplies by W. Idea from Unsloth's fused CE loss
+    (unsloth_zoo, chunked hidden @ W + CE) and cut-cross-entropy; the code is ours.
+    """
+
+    @staticmethod
+    def forward(ctx, hidden2d, weight, target, denom, chunk):
+        stats = stat_buffers(hidden2d.shape[0], hidden2d.device)
+        for start in range(0, hidden2d.shape[0], chunk):
+            rows = slice(start, start + chunk)
+            logits = hidden2d[rows].to(weight.dtype) @ weight.t()
+            ce_stats(logits, target[rows], [buf[rows] for buf in stats])
+        lse, loss, entropy, correct = stats
+        ctx.save_for_backward(hidden2d, weight, target, lse, denom)
+        ctx.chunk = chunk
+        ctx.mark_non_differentiable(loss, entropy, correct)
+        return loss.sum() / denom, loss, entropy, correct
+
+    @staticmethod
+    def backward(ctx, grad, *_):
+        hidden2d, weight, target, lse, denom = ctx.saved_tensors
+        coef = (grad.float() / denom).reshape(1)
+        dhidden = torch.empty_like(hidden2d)
+        for start in range(0, hidden2d.shape[0], ctx.chunk):
+            rows = slice(start, start + ctx.chunk)
+            logits = hidden2d[rows].to(weight.dtype) @ weight.t()
+            ce_grad(logits, target[rows], lse[rows], coef)
+            dhidden[rows] = logits @ weight  # the cast back to hidden's dtype, as autocast's
+        return dhidden, None, None, None, None
+
+
+_HEAD = {}  # (weight ptr, dtype) -> (version, copy): one cast per run, not one per step
+
+
+def head_copy(weight, dtype):
+    key = (weight.data_ptr(), dtype)
+    cached = _HEAD.get(key)
+    if cached is None or cached[0] != weight._version:
+        _HEAD.clear()
+        cached = _HEAD[key] = (weight._version, weight.detach().to(dtype).contiguous())
+    return cached[1]
+
+
+def fused_causal_lm_loss(logits, labels, num_items_in_batch=None, hidden=None, head=None):
+    """Loss as ForCausalLMLoss, plus Soup's ChunkedStep for TRL's metrics and the rewind log.
+    From logits, or (logits=None) from hidden states and a frozen nn.Linear head, chunked."""
     from soup_cli.utils.stream_loss_chunk import ChunkedStep, shift_for_next_token
 
     batch, seq = labels.shape
@@ -117,8 +176,16 @@ def fused_causal_lm_loss(logits, labels, num_items_in_batch=None):
     if num_items_in_batch is None:
         denom = valid.sum().float()
     else:
-        denom = torch.as_tensor(num_items_in_batch, device=logits.device).float()
-    loss, token_loss, entropy, correct = FusedCrossEntropy.apply(logits.contiguous(), target, denom)
+        denom = torch.as_tensor(num_items_in_batch, device=labels.device).float()
+    if logits is not None:
+        loss, token_loss, entropy, correct = FusedCrossEntropy.apply(logits.contiguous(), target,
+                                                                      denom)
+    else:
+        dtype = (torch.get_autocast_dtype("cuda") if torch.is_autocast_enabled("cuda")
+                 else head.weight.dtype)
+        hidden2d = hidden.reshape(-1, hidden.shape[-1])
+        loss, token_loss, entropy, correct = ChunkedHeadCrossEntropy.apply(
+            hidden2d, head_copy(head.weight, dtype), target, denom, profile()["ce_chunk_rows"])
     step = ChunkedStep(token_entropy=entropy.view(batch, seq), token_loss=token_loss.view(batch, seq),
                        correct=correct.sum(), labelled=valid.sum())
     return loss, step
@@ -154,8 +221,12 @@ def patch_fused_ce():
         outputs = self.model(input_ids=input_ids, attention_mask=attention_mask,
                              position_ids=position_ids, past_key_values=past_key_values,
                              inputs_embeds=inputs_embeds, use_cache=use_cache, **kwargs)
-        logits = self.lm_head(outputs.last_hidden_state)
-        loss, STATE.step = fused_causal_lm_loss(logits, labels, kwargs.get("num_items_in_batch"))
+        head, hidden = self.lm_head, outputs.last_hidden_state
+        n_items = kwargs.get("num_items_in_batch")
+        if type(head) is torch.nn.Linear and head.bias is None and not head.weight.requires_grad:
+            loss, STATE.step = fused_causal_lm_loss(None, labels, n_items, hidden, head)
+        else:
+            loss, STATE.step = fused_causal_lm_loss(head(hidden), labels, n_items)
         return CausalLMOutputWithPast(loss=loss, logits=None, past_key_values=outputs.past_key_values,
                                       hidden_states=outputs.hidden_states,
                                       attentions=outputs.attentions)
